@@ -1,12 +1,12 @@
-GCPDS - visualizations
-======================
+Dunderlab - visualizations
+==========================
 
 Installation
 ------------
 
 .. code:: ipython3
 
-    pip install -U git+https://github.com/UN-GCPDS/python-gcpds.visualizations.git
+    pip install -U git+https://github.com/dunderlab/python-dunderlab.visualizations.git
 
 .. container:: gcpds-images0
 

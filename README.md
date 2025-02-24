@@ -1,11 +1,11 @@
-# GCPDS - visualizations
+# Dunderlab - visualizations
 
 
 ## Installation
 
 
 ```python
-pip install -U git+https://github.com/UN-GCPDS/python-gcpds.visualizations.git
+pip install -U git+https://github.com/dunderlab/python-dunderlab.visualizations.git
 ```
 
 <div class='gcpds-images0'>
