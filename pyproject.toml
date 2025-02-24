@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dunderlab-visualizations"
+version = "0.7"
+description = ""
+readme = "README.md"
+requires-python = ">=3.6"
+license = { text = "BSD-2-Clause" }
+authors = [
+    { name = "Yeison Cardona", email = "yencardonaal@unal.edu.co" }
+]
+maintainers = [
+    { name = "Yeison Cardona", email = "yencardonaal@unal.edu.co" }
+]
+
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Intended Audience :: Healthcare Industry",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: BSD License",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Human Machine Interfaces",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+    "Topic :: Software Development :: Embedded Systems",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Hardware :: Hardware Drivers",
+]
+
+dependencies = [
+    "python-circos",
+    "matplotlib>=3.5.3",
+    "numpy",
+    "mne",
+]
+
+[project.urls]
+"Repository" = "https://github.com/dunderlab/python-dunderlab.visualizations"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["dunderlab.visualizations"]
