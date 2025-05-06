@@ -1,1 +1,1 @@
-from .circos import CircosConnectivity
+from .circos import CircosConnectivity, interact_connectivity

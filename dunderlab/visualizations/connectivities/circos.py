@@ -1,8 +1,9 @@
 import numpy as np
 import matplotlib
-import pycircos
+from dunderlab.visualizations.connectivities import pycircos
 import mne
 from matplotlib import pyplot as plt
+
 
 
 ########################################################################
@@ -13,7 +14,7 @@ class CircosConnectivity:
 
     # ----------------------------------------------------------------------
     def __init__(self, connectivities, channels, areas, small_separation=5, big_separation=20,
-                 labelsize=10, show_emisphere=True, min_alpha=0.5, threshold=0,
+                 labelsize=10, show_emisphere=True, threshold=0, limit_connections=-1,
                  areas_cmap='viridis', arcs_cmap='viridis', size=10,
 
                  width={'hemispheres': 35, 'areas': 100, 'channels': 60},
@@ -22,12 +23,59 @@ class CircosConnectivity:
                  labelposition={'hemispheres': 60,
                                 'areas': 0, 'channels': -10},
 
-                 arcs_separation=30,
+                 arcs_separation_src=30,
+                 arcs_separation_dst=30,
                  hemisphere_color='C6', channel_color='#c5c5c5', connection_width=1,
                  offset=0, drop_channels=False,
                  fig=None,
-                 vmin=None, vmax=None):
+                 vmin=None, vmax=None,
+
+                 arrowhead_width=0.07,
+                 arrowhead_length=50,
+                 ):
         """Constructor"""
+
+        self.params_ = dict(
+
+            # Threshold and filtering
+            threshold=threshold,
+            limit_connections=limit_connections,
+
+            # Colormaps and color styling
+            areas_cmap=areas_cmap,
+            arcs_cmap=arcs_cmap,
+            hemisphere_color=hemisphere_color,
+            channel_color=channel_color,
+
+            # Label widths and font sizes per layer
+            width=width,
+            text=text,
+            separation=separation,
+            labelposition=labelposition,
+            size=size,
+            labelsize=labelsize,
+
+            # Shape layout and structural configuration
+            show_emisphere=show_emisphere,
+            connection_width=connection_width,
+            small_separation=small_separation,
+            big_separation=big_separation,
+            offset=offset,
+
+            # Arc connection parameters
+            arcs_separation_src=arcs_separation_src,
+            arcs_separation_dst=arcs_separation_dst,
+
+            # Arrowhead styling
+            arrowhead_width=arrowhead_width,
+            arrowhead_length=arrowhead_length,
+
+        )
+
+
+
+
+
 
         self.areas = areas
         self.arc_c = 0
@@ -38,7 +86,8 @@ class CircosConnectivity:
         self.text = text
         self.separation = separation
         self.labelposition = labelposition
-        self.arcs_separation = arcs_separation
+        self.arcs_separation_src = arcs_separation_src
+        self.arcs_separation_dst = arcs_separation_dst
         self.hemisphere_color = hemisphere_color
         self.channel_color = channel_color
         self.connection_width = connection_width
@@ -47,6 +96,14 @@ class CircosConnectivity:
         self.channels = channels
         self.vlim = (vmin, vmax)
         # self.markersize = markersize
+
+        self.arrowhead_width = arrowhead_width
+        self.arrowhead_length = arrowhead_length
+
+
+        if offset != 0:
+            show_emisphere = False
+
 
         electrodes = sum([len(self.areas[k]) for k in self.areas])
 
@@ -71,7 +128,22 @@ class CircosConnectivity:
             getattr(self, f'arc_{arc}')(level=i)
         self.draw_arcs()
 
-        self.connectivity(connectivities, threshold, min_alpha)
+
+        if len(connectivities.shape) == 2:
+            self.directional = True
+
+        else:
+            self.directional = False
+            self.arrowhead_length = 0
+            self.arrowhead_width = 0
+
+
+        self.connectivity(connectivities, threshold, limit_connections)
+
+
+    @property
+    def params(self):
+        return self.params_
 
     # ----------------------------------------------------------------------
     def get_level(self, level_i):
@@ -143,14 +215,15 @@ class CircosConnectivity:
     # ----------------------------------------------------------------------
     def arc_hemispheres(self, level=1):
         """"""
-        arc = self.Garc(arc_id='Right hemisphere', facecolor=self.hemisphere_color,
+        arc = self.Garc(arc_id='Right Hemisphere', facecolor=self.hemisphere_color,
                         edgecolor=self.hemisphere_color, size=180 - self.big_separation,
                         interspace=self.big_separation, raxis_range=self.get_level(
                             level),
                         labelposition=self.labelposition[self.arcs[level - 1]], label_visible=True, labelsize=self.labelsize,
                         )
         self.circle_.add_garc(arc)
-        arc = self.Garc(arc_id='Left hemisphere', facecolor=self.hemisphere_color,
+
+        arc = self.Garc(arc_id='Left Hemisphere', facecolor=self.hemisphere_color,
                         edgecolor=self.hemisphere_color, size=180 - self.big_separation,
                         interspace=self.big_separation, raxis_range=self.get_level(
                             level),
@@ -162,8 +235,9 @@ class CircosConnectivity:
     # ----------------------------------------------------------------------
     def draw_arcs(self):
         """"""
-        self.circle_.set_garcs((self.big_separation / 2) + (self.offset * (self.smin + self.big_separation / 2)),
-                               (360 * self.arc_c) + (self.big_separation / 2) + (self.offset * (self.smin + self.big_separation / 2)))
+        o = self.offset * (self.smin + self.big_separation / 2)
+        self.circle_.set_garcs((self.big_separation / 2) + o,
+                               (360 * self.arc_c) + (self.big_separation / 2) + o)
 
     # ----------------------------------------------------------------------
     def format_connectivities(self, connectivities):
@@ -177,7 +251,7 @@ class CircosConnectivity:
         return connectivities
 
     # ----------------------------------------------------------------------
-    def connectivity(self, connectivities, threshold, min_alpha):
+    def connectivity(self, connectivities, threshold, limit_connections):
         """"""
         def map_(x, in_min, in_max, out_min, out_max):
             return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
@@ -185,48 +259,73 @@ class CircosConnectivity:
         connectivities = self.format_connectivities(connectivities)
 
         chords = []
-        for i, j in zip(*np.triu_indices(connectivities.shape[0])):
+        # for i, j in zip(*np.triu_indices(connectivities.shape[0])):
+        for i, j in zip(*np.where(~np.eye(connectivities.shape[0], dtype=bool))):
 
             if connectivities[i][j] < threshold:
                 continue
+
             if i == j:
                 continue
+
+            if connectivities[i][j] == 0:
+                continue
+
+            # if i < j:
+            #     connectivities[i][j] = connectivities[j][i]
 
             kk = map_(connectivities[i][j], threshold, connectivities[connectivities != 1].max(
             ), 1, self.smin / 2)
 
-            w1 = (self.smin / 2) - kk * self.connection_width
-            w2 = (self.smin / 2) + kk * self.connection_width
+
+            if not self.directional:
+                w1 = (self.smin / 2) - kk * self.connection_width
+                w2 = (self.smin / 2) + kk * self.connection_width
+                w3=w1
+                w4=w2
+            else:
+
+                w1 = (self.smin / 4) - kk * self.connection_width
+                w2 = (self.smin / 4) + kk * self.connection_width
+
+                w3 = 3*(self.smin / 4) - kk * self.connection_width
+                w4 = 3*(self.smin / 4) + kk * self.connection_width
+
 
             x1, _ = self.get_level(self.arc_c)
-            source = (self.channels[i], w1, w2, x1 - self.arcs_separation)
-            destination = (self.channels[j], w1,
-                           w2, x1 - self.arcs_separation)
+
+
+            source = (self.channels[i], w1, w2, x1 - self.arcs_separation_src)
+            destination = (self.channels[j], w3, w4, x1 - self.arcs_separation_dst)
 
             chords.append([connectivities[i][j], source, destination])
-        # norm2 = matplotlib.colors.Normalize(vmin=min_alpha, vmax=connectivities[connectivities != 1].max())
+
         if self.vlim[0]:
             norm = matplotlib.colors.Normalize(
                 vmin=self.vlim[0], vmax=self.vlim[1])
-            for v_, src, des in sorted(chords):
-                self.circle_.chord_plot(src, des,
-                                        facecolor=matplotlib.pyplot.cm.get_cmap(
-                                            self.arcs_cmap)(norm(v_)),
-                                        edgecolor=matplotlib.pyplot.cm.get_cmap(
-                                            self.arcs_cmap)(norm(v_)),
-                                        linewidth=1,
-                                        )
         else:
-            norm = matplotlib.colors.Normalize(
-                vmin=threshold, vmax=connectivities[connectivities != 1].max())
-            for v_, src, des in sorted(chords):
-                self.circle_.chord_plot(src, des,
-                                        facecolor=matplotlib.pyplot.cm.get_cmap(
-                                            self.arcs_cmap)(norm(v_)),
-                                        edgecolor=matplotlib.pyplot.cm.get_cmap(
-                                            self.arcs_cmap)(norm(v_)),
-                                        linewidth=1,
-                                        )
+            if threshold:
+                vmin = threshold
+            else:
+                vmin = min([c[0] for c in sorted(chords)[::-1][:limit_connections]])
+
+            if limit_connections != -1:
+                vmax = max([c[0] for c in sorted(chords)[::-1][:limit_connections]])
+            else:
+                vmax = connectivities[connectivities != 1].max()
+
+            norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
+
+
+        for v_, src, des in sorted(chords)[-limit_connections:]:
+            self.circle_.chord_plot(des, src,
+                                    facecolor=matplotlib.pyplot.cm.get_cmap(
+                                        self.arcs_cmap)(norm(v_)),
+                                    edgecolor=matplotlib.pyplot.cm.get_cmap(
+                                        self.arcs_cmap)(norm(v_)),
+                                    linewidth=1,
+                                    arrowhead_width=self.arrowhead_width, arrowhead_length=self.arrowhead_length
+                                    )
 
     # ----------------------------------------------------------------------
     @property
@@ -313,3 +412,129 @@ class CircosConnectivity:
         # plt.axis('off')
 
         # return plt.gcf()
+
+
+def interact_connectivity(connectivities, channels, areas, offset_=0):
+    import ipywidgets as widgets
+    from IPython.display import display
+    from ipywidgets import interactive
+
+    connectivity_plot = [None]
+    @widgets.interact(
+        threshold=widgets.FloatSlider(min=0.0, max=1.0, step=0.05, value=0.7),
+        limit_connections=widgets.IntSlider(min=-1, max=len(connectivities), step=1, value=-1),
+
+        areas_cmap=widgets.Dropdown(options=sorted(m for m in plt.colormaps() if not m.endswith('_r')), value='Set3'),
+        arcs_cmap=widgets.Dropdown(options=sorted(m for m in plt.colormaps() if not m.endswith('_r')), value='Wistia'),
+        hemisphere_color=widgets.ColorPicker(value='lightgray'),
+        channel_color=widgets.ColorPicker(value='#f8f9fa'),
+
+        width_hemispheres=widgets.IntSlider(min=-100, max=100, step=1, value=35),
+        width_areas=widgets.IntSlider(min=-100, max=100, step=1, value=100),
+        width_channels=widgets.IntSlider(min=-100, max=100, step=1, value=60),
+
+        text_hemispheres=widgets.IntSlider(min=-100, max=100, step=1, value=40),
+        text_areas=widgets.IntSlider(min=-100, max=100, step=1, value=20),
+        text_channels=widgets.IntSlider(min=-100, max=100, step=1, value=40),
+
+        separation_hemispheres=widgets.IntSlider(min=-100, max=100, step=1, value=10),
+        separation_areas=widgets.IntSlider(min=-100, max=100, step=1, value=-30),
+        separation_channels=widgets.IntSlider(min=-100, max=100, step=1, value=5),
+
+        labelposition_hemispheres=widgets.IntSlider(min=-100, max=100, step=1, value=60),
+        labelposition_areas=widgets.IntSlider(min=-100, max=100, step=1, value=0),
+        labelposition_channels=widgets.IntSlider(min=-100, max=100, step=1, value=-10),
+
+        size=widgets.IntSlider(min=-100, max=100, step=1, value=10),
+        labelsize=widgets.IntSlider(min=-100, max=100, step=1, value=15),
+
+        show_emisphere=widgets.Checkbox(value=True),
+        connection_width=widgets.FloatSlider(min=0.01, max=1.0, step=0.01, value=0.1),
+        small_separation=widgets.IntSlider(min=0, max=100, step=1, value=5),
+        big_separation=widgets.IntSlider(min=0, max=100, step=1, value=10),
+        offset=widgets.IntSlider(min=-10, max=10, step=1, value=offset_),
+
+        arcs_separation_src=widgets.IntSlider(min=0, max=300, step=1, value=30),
+        arcs_separation_dst=widgets.IntSlider(min=0, max=300, step=1, value=30),
+
+        arrowhead_width=widgets.FloatSlider(min=0.0, max=1.0, step=0.01, value=0.05),
+        arrowhead_length=widgets.IntSlider(min=0, max=100, step=1, value=30),
+    )
+    def update_circos(threshold=0.7, limit_connections=-1,
+                      areas_cmap='Set3', arcs_cmap='Wistia',
+                      hemisphere_color='lightgray', channel_color='#f8f9fa',
+                      width_hemispheres=35, width_areas=100, width_channels=60,
+                      text_hemispheres=40, text_areas=20, text_channels=40,
+                      separation_hemispheres=10, separation_areas=-30, separation_channels=5,
+                      labelposition_hemispheres=60, labelposition_areas=0, labelposition_channels=-10,
+                      size=10, labelsize=15,
+                      show_emisphere=True,
+                      connection_width=0.1,
+                      small_separation=5,
+                      big_separation=10,
+                      offset=offset_,
+                      arcs_separation_src=30,
+                      arcs_separation_dst=30,
+                      arrowhead_width=0.05,
+                      arrowhead_length=30):
+
+        width = {
+            'hemispheres': width_hemispheres,
+            'areas': width_areas,
+            'channels': width_channels,
+        }
+        text = {
+            'hemispheres': text_hemispheres,
+            'areas': text_areas,
+            'channels': text_channels,
+        }
+        separation = {
+            'hemispheres': separation_hemispheres,
+            'areas': separation_areas,
+            'channels': separation_channels,
+        }
+        labelposition = {
+            'hemispheres': labelposition_hemispheres,
+            'areas': labelposition_areas,
+            'channels': labelposition_channels,
+        }
+        connectivity_plot[0] = CircosConnectivity(
+            connectivities, channels, areas,
+
+            # Threshold and filtering
+            threshold=threshold,
+            limit_connections=limit_connections,
+
+            # Colormaps and color styling
+            areas_cmap=areas_cmap,
+            arcs_cmap=arcs_cmap,
+            hemisphere_color=hemisphere_color,
+            channel_color=channel_color,
+
+            # Label widths and font sizes per layer
+            width=width,
+            text=text,
+            separation=separation,
+            labelposition=labelposition,
+            size=size,
+            labelsize=labelsize,
+
+            # Shape layout and structural configuration
+            show_emisphere=show_emisphere,
+            connection_width=connection_width,
+            small_separation=small_separation,
+            big_separation=big_separation,
+            offset=offset,
+
+            # Arc connection parameters
+            arcs_separation_src=arcs_separation_src,
+            arcs_separation_dst=arcs_separation_dst,
+
+            # Arrowhead styling
+            arrowhead_width=arrowhead_width,
+            arrowhead_length=arrowhead_length,
+        )
+
+        # display(connectivity_plot[0].figure)
+
+    return connectivity_plot[0]

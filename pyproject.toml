@@ -41,6 +41,7 @@ dependencies = [
     "matplotlib>=3.5.3",
     "numpy",
     "mne",
+    "biopython",
 ]
 
 [project.urls]
