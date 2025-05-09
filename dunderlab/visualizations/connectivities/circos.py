@@ -280,7 +280,7 @@ class CircosConnectivity:
                 continue
 
             if percentile:
-                p_min, p_max = np.percentile(connectivities[connectivities != 0], percentile)
+                p_min, p_max = np.percentile(connectivities[connectivities > threshold], percentile)
                 if not (p_min <= connectivities[i][j] <= p_max):
                     continue
 
@@ -334,10 +334,10 @@ class CircosConnectivity:
             if limit_connections != -1:
                 vmax = max([c[0] for c in sorted(chords)[::-1][:limit_connections]])
             else:
-                vmax = connectivities[connectivities != 1].max()
+                vmax = connectivities[connectivities > threshold].max()
 
             if percentile:
-                vmin, vmax = np.percentile(connectivities[connectivities != 1], percentile)
+                vmin, vmax = np.percentile(connectivities[connectivities > threshold], percentile)
 
             norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
 
