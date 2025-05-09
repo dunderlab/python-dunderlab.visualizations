@@ -128,6 +128,15 @@ class CircosConnectivity:
             getattr(self, f'arc_{arc}')(level=i)
         self.draw_arcs()
 
+        connectivities = np.asarray(connectivities)
+        c_min = connectivities.min()
+        c_max = connectivities.max()
+
+        if c_max == 0:
+            raise ValueError("Cannot normalize: maximum connectivity value is zero.")
+
+        # Normalize to [0, 1] after offsetting by minimum
+        connectivities = (connectivities - c_min) / c_max
 
         if len(connectivities.shape) == 2:
             self.directional = True
