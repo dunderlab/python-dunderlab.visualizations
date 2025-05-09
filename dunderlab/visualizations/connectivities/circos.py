@@ -1,3 +1,6 @@
+from locale import normalize
+from time import process_time_ns
+
 import numpy as np
 import matplotlib
 from dunderlab.visualizations.connectivities import pycircos
@@ -13,8 +16,10 @@ class CircosConnectivity:
     Gcircle = pycircos.Gcircle
 
     # ----------------------------------------------------------------------
-    def __init__(self, connectivities, channels, areas, small_separation=5, big_separation=20,
-                 labelsize=10, show_emisphere=True, threshold=0, limit_connections=-1,
+    def __init__(self, connectivities, channels, areas,
+
+                 small_separation=5, big_separation=20,
+                 labelsize=10, show_emisphere=True, threshold=0, limit_connections=-1, percentile=None, normalize_colors=True,
                  areas_cmap='viridis', arcs_cmap='viridis', size=10,
 
                  width={'hemispheres': 35, 'areas': 100, 'channels': 60},
@@ -32,14 +37,17 @@ class CircosConnectivity:
 
                  arrowhead_width=0.07,
                  arrowhead_length=50,
-                 ):
-        """Constructor"""
+                 arrow_max_width=10,
 
+
+                 ):
         self.params_ = dict(
 
             # Threshold and filtering
             threshold=threshold,
             limit_connections=limit_connections,
+            percentile=percentile,
+            normalize_colors=normalize_colors,
 
             # Colormaps and color styling
             areas_cmap=areas_cmap,
@@ -69,12 +77,9 @@ class CircosConnectivity:
             # Arrowhead styling
             arrowhead_width=arrowhead_width,
             arrowhead_length=arrowhead_length,
+            arrow_max_width=arrow_max_width
 
         )
-
-
-
-
 
 
         self.areas = areas
@@ -99,6 +104,7 @@ class CircosConnectivity:
 
         self.arrowhead_width = arrowhead_width
         self.arrowhead_length = arrowhead_length
+        self.arrow_max_width = arrow_max_width
 
 
         if offset != 0:
@@ -136,7 +142,7 @@ class CircosConnectivity:
             raise ValueError("Cannot normalize: maximum connectivity value is zero.")
 
         # Normalize to [0, 1] after offsetting by minimum
-        connectivities = (connectivities - c_min) / c_max
+        connectivities = (connectivities - c_min) / (c_max-c_min)
 
         if len(connectivities.shape) == 2:
             self.directional = True
@@ -147,7 +153,7 @@ class CircosConnectivity:
             self.arrowhead_width = 0
 
 
-        self.connectivity(connectivities, threshold, limit_connections)
+        self.connectivity(connectivities, threshold, limit_connections, percentile, normalize_colors)
 
 
     @property
@@ -260,7 +266,7 @@ class CircosConnectivity:
         return connectivities
 
     # ----------------------------------------------------------------------
-    def connectivity(self, connectivities, threshold, limit_connections):
+    def connectivity(self, connectivities, threshold, limit_connections, percentile, normalize_colors):
         """"""
         def map_(x, in_min, in_max, out_min, out_max):
             return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
@@ -268,11 +274,15 @@ class CircosConnectivity:
         connectivities = self.format_connectivities(connectivities)
 
         chords = []
-        # for i, j in zip(*np.triu_indices(connectivities.shape[0])):
         for i, j in zip(*np.where(~np.eye(connectivities.shape[0], dtype=bool))):
 
             if connectivities[i][j] < threshold:
                 continue
+
+            if percentile:
+                p_min, p_max = np.percentile(connectivities[connectivities != 0], percentile)
+                if not (p_min <= connectivities[i][j] <= p_max):
+                    continue
 
             if i == j:
                 continue
@@ -280,11 +290,8 @@ class CircosConnectivity:
             if connectivities[i][j] == 0:
                 continue
 
-            # if i < j:
-            #     connectivities[i][j] = connectivities[j][i]
-
             kk = map_(connectivities[i][j], threshold, connectivities[connectivities != 1].max(
-            ), 1, self.smin / 2)
+            ), 1, self.arrow_max_width)
 
 
             if not self.directional:
@@ -312,6 +319,12 @@ class CircosConnectivity:
         if self.vlim[0]:
             norm = matplotlib.colors.Normalize(
                 vmin=self.vlim[0], vmax=self.vlim[1])
+
+        elif not normalize_colors:
+            vmin = connectivities.min()
+            vmax = connectivities.max()
+            norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
+
         else:
             if threshold:
                 vmin = threshold
@@ -322,6 +335,9 @@ class CircosConnectivity:
                 vmax = max([c[0] for c in sorted(chords)[::-1][:limit_connections]])
             else:
                 vmax = connectivities[connectivities != 1].max()
+
+            if percentile:
+                vmin, vmax = np.percentile(connectivities[connectivities != 1], percentile)
 
             norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
 
@@ -398,29 +414,8 @@ class CircosConnectivity:
 
         return ax
 
-    # # ----------------------------------------------------------------------
-    # @property
-    # def figure(self):
-        # """"""
-        # plt.savefig('temp1.png')
-        # plt.close()
 
-        # plt.figure(figsize=(8, 8))
-        # self.bitmap_topoplot()
-        # plt.xlim(-0.15, 0.15)
-        # plt.savefig('temp2.png')
-        # plt.close()
 
-        # plt.figure(figsize=(20, 10), dpi=90)
-        # plt.subplots_adjust(wspace=0)
-        plt.subplot(121)
-        # plt.imshow(plt.imread('temp1.png'))
-        # plt.axis('off')
-        # plt.subplot(122)
-        # plt.imshow(plt.imread('temp2.png'))
-        # plt.axis('off')
-
-        # return plt.gcf()
 
 
 def interact_connectivity(connectivities, channels, areas, offset_=0):
@@ -429,9 +424,13 @@ def interact_connectivity(connectivities, channels, areas, offset_=0):
     from ipywidgets import interactive
 
     connectivity_plot = [None]
+
     @widgets.interact(
-        threshold=widgets.FloatSlider(min=0.0, max=1.0, step=0.05, value=0.7),
+        threshold=widgets.FloatSlider(min=0.0, max=1.0, step=0.1, value=0),
         limit_connections=widgets.IntSlider(min=-1, max=len(connectivities), step=1, value=-1),
+
+        percentile=widgets.IntRangeSlider(min=0, max=100, step=1, value=[25, 75]),
+        normalize_colors=widgets.Checkbox(value=True),
 
         areas_cmap=widgets.Dropdown(options=sorted(m for m in plt.colormaps() if not m.endswith('_r')), value='Set3'),
         arcs_cmap=widgets.Dropdown(options=sorted(m for m in plt.colormaps() if not m.endswith('_r')), value='Wistia'),
@@ -468,8 +467,9 @@ def interact_connectivity(connectivities, channels, areas, offset_=0):
 
         arrowhead_width=widgets.FloatSlider(min=0.0, max=1.0, step=0.01, value=0.05),
         arrowhead_length=widgets.IntSlider(min=0, max=100, step=1, value=30),
+        arrow_max_width=widgets.IntSlider(min=0, max=100, step=1, value=10),
     )
-    def update_circos(threshold=0.7, limit_connections=-1,
+    def update_circos(threshold=0, limit_connections=-1, percentile=[25, 75], normalize_colors=True,
                       areas_cmap='Set3', arcs_cmap='Wistia',
                       hemisphere_color='lightgray', channel_color='#f8f9fa',
                       width_hemispheres=35, width_areas=100, width_channels=60,
@@ -485,7 +485,9 @@ def interact_connectivity(connectivities, channels, areas, offset_=0):
                       arcs_separation_src=30,
                       arcs_separation_dst=30,
                       arrowhead_width=0.05,
-                      arrowhead_length=30):
+                      arrowhead_length=30,
+                      arrow_max_width=10,
+                      ):
 
         width = {
             'hemispheres': width_hemispheres,
@@ -507,12 +509,19 @@ def interact_connectivity(connectivities, channels, areas, offset_=0):
             'areas': labelposition_areas,
             'channels': labelposition_channels,
         }
+
+        percentile_range = list(percentile)
+        if percentile_range[0] == 0 and percentile_range[1] == 100:
+            percentile_range = None
+
         connectivity_plot[0] = CircosConnectivity(
             connectivities, channels, areas,
 
             # Threshold and filtering
             threshold=threshold,
             limit_connections=limit_connections,
+            percentile=percentile_range,
+            normalize_colors=normalize_colors,
 
             # Colormaps and color styling
             areas_cmap=areas_cmap,
@@ -542,8 +551,8 @@ def interact_connectivity(connectivities, channels, areas, offset_=0):
             # Arrowhead styling
             arrowhead_width=arrowhead_width,
             arrowhead_length=arrowhead_length,
+            arrow_max_width=arrow_max_width,
         )
 
-        # display(connectivity_plot[0].figure)
 
-    return connectivity_plot[0]
+    return lambda :connectivity_plot[0]
